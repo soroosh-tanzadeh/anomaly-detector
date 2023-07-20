@@ -2,6 +2,7 @@ package streams
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -20,24 +21,25 @@ func NewRedisTrafficStream(stream string, client *redis.Client) *RedisTrafficStr
 	}
 }
 
-func (r *RedisTrafficStream) Add(traffic int64) error {
-	_, err := r.client.XAdd(context.Background(), &redis.XAddArgs{
+func (r *RedisTrafficStream) Add(ctx context.Context, traffic float64) error {
+	_, err := r.client.XAdd(ctx, &redis.XAddArgs{
 		Stream: r.stream,
 		MaxLen: 3600 * 8,
 		Values: map[string]string{
-			"traffic": strconv.Itoa(int(traffic)),
+			"traffic": fmt.Sprintf("%.18f", traffic),
 		},
 	}).Result()
 	return err
 }
-func (r *RedisTrafficStream) Range(from time.Time, to time.Time) ([]int64, error) {
+func (r *RedisTrafficStream) Range(ctx context.Context, from time.Time, to time.Time) ([]float64, error) {
 	messages, err := r.client.XRange(context.Background(), r.stream, strconv.Itoa(int(from.UnixMilli())), strconv.Itoa(int(to.UnixMilli()))).Result()
 	if err != nil {
-		return []int64{}, err
+		return []float64{}, err
 	}
-	traffics := []int64{}
+	traffics := []float64{}
 	for _, message := range messages {
-		traffics = append(traffics, message.Values["traffic"].(int64))
+		traffic, _ := strconv.ParseFloat(message.Values["traffic"].(string), 64)
+		traffics = append(traffics, traffic)
 	}
 	return traffics, nil
 }

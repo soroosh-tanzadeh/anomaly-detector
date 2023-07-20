@@ -1,6 +1,9 @@
 package detectors
 
-import "math"
+import (
+	"fmt"
+	"math"
+)
 
 func SMA(data []float64, k int) []float64 {
 	sma := make([]float64, len(data)-k+1)
@@ -23,6 +26,7 @@ func DetectAnomalyWithSMA(traffics []float64, period int, threshold float64) []b
 		}
 		diff := math.Abs(v - sma[i-period])
 		if diff > threshold {
+			fmt.Printf("Average moved from %f to %f \n", v, sma[i-period])
 			anomalies[i] = true
 		}
 	}

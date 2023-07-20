@@ -6,6 +6,6 @@ import (
 )
 
 type TrafficStream interface {
-	Add(context.Context, time.Time, int64) error
-	Range(from time.Time, to time.Timer) []int64
+	Add(context.Context, float64) error
+	Range(ctx context.Context, from time.Time, to time.Time) ([]float64, error)
 }
