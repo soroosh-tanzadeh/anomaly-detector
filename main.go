@@ -2,18 +2,15 @@ package main
 
 import (
 	"context"
-	"fmt" // Import the fmt package to print messages to the console.
-	"log" // Import the log package to log errors to the console.
+	"fmt"
+	"log"
 	"os"
 	"time"
 
-	"github.com/gopacket/gopacket" // Import the gopacket package to decode packets.
+	"github.com/gopacket/gopacket"
+	"github.com/gopacket/gopacket/pcap"
 	"github.com/redis/go-redis/v9"
 	"github.com/soroosh-tanzadeh/anormaly_detector/internal/streams"
-
-	// Import the layers package to access the various network layers.
-
-	"github.com/gopacket/gopacket/pcap" // Import the pcap package to capture packets.
 )
 
 func main() {
