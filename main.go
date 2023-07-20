@@ -7,25 +7,30 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strconv"
 	"syscall"
 	"time"
 
 	"github.com/gopacket/gopacket"
 	"github.com/gopacket/gopacket/pcap"
+	_ "github.com/joho/godotenv/autoload"
 	"github.com/redis/go-redis/v9"
 	"github.com/soroosh-tanzadeh/anormaly_detector/internal/detectors"
 	"github.com/soroosh-tanzadeh/anormaly_detector/internal/streams"
 )
 
 func main() {
-
+	threshold, err := strconv.ParseFloat(os.Getenv("SMA_DETECTOR_THERHSOLD"), 64)
+	if err != nil {
+		log.Fatal(err)
+	}
 	redisClient := redis.NewClient(&redis.Options{
-		Addr:     "127.0.0.1:6379",
-		Password: "123456",
+		Addr:     os.Getenv("SMA_DETECTOR_REDIS_ADDR"),
+		Password: os.Getenv("SMA_DETECTOR_REDIS_PASS"),
 		DB:       5,
 	})
 	if err := redisClient.Ping(context.Background()).Err(); err != nil {
-		fmt.Printf("Redis Error: %s", err.Error())
+		log.Fatalf("Redis Error: %s", err.Error())
 	}
 
 	// Check if file argument is provided
@@ -48,7 +53,8 @@ func main() {
 
 	go packetLogger(stream, *packetSource)
 
-	go windowTracker(stream, 1*1.049e+6)
+	// Change Thershold]
+	go windowTracker(stream, threshold)
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
