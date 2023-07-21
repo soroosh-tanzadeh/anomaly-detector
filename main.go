@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"os/signal"
 	"runtime"
 	"strconv"
+	"sync"
 	"syscall"
 	"time"
 
@@ -17,13 +19,25 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/soroosh-tanzadeh/anormaly_detector/internal/detectors"
 	"github.com/soroosh-tanzadeh/anormaly_detector/internal/streams"
+	"github.com/soroosh-tanzadeh/anormaly_detector/internal/trafficplot"
 )
+
+var plotLock *sync.Mutex = &sync.Mutex{}
+
+const unit = 125000
 
 func main() {
 	threshold, err := strconv.ParseFloat(os.Getenv("SMA_DETECTOR_THERHSOLD"), 64)
 	if err != nil {
 		log.Fatal(err)
 	}
+	threshold = threshold * unit
+
+	windowSize, err := strconv.ParseFloat(os.Getenv("SMA_DETECTOR_WINDOW_SIZE"), 64)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	redisClient := redis.NewClient(&redis.Options{
 		Addr:     os.Getenv("SMA_DETECTOR_REDIS_ADDR"),
 		Password: os.Getenv("SMA_DETECTOR_REDIS_PASS"),
@@ -32,6 +46,8 @@ func main() {
 	if err := redisClient.Ping(context.Background()).Err(); err != nil {
 		log.Fatalf("Redis Error: %s", err.Error())
 	}
+
+	trafficplot.CreateTrafficPlot()
 
 	// Check if file argument is provided
 	if len(os.Args) < 2 {
@@ -54,7 +70,7 @@ func main() {
 	go packetLogger(stream, *packetSource)
 
 	// Change Thershold]
-	go windowTracker(stream, threshold)
+	go windowTracker(stream, windowSize, threshold)
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
@@ -66,30 +82,37 @@ func main() {
 		done <- true
 	}()
 	<-done
+	trafficplot.Save()
 	fmt.Println("exiting")
 }
 
 // stream Traffic Stream
 // thershold max moving average in bits
-func windowTracker(stream streams.TrafficStream, thershold float64) {
+func windowTracker(stream streams.TrafficStream, windowSize, thershold float64) {
 	runtime.LockOSThread()
 	prevTime := time.Now()
 	for {
 		nowTime := time.Now()
-		if nowTime.UnixMilli()-prevTime.UnixMilli() >= 10000 {
+		if nowTime.UnixMilli()-prevTime.UnixMilli() >= int64(windowSize*1000) {
 			traffics, err := stream.Range(context.Background(), prevTime, nowTime)
-			if len(traffics) >= 10 {
-				if err != nil {
-					fmt.Printf("Redis Error: %s", err.Error())
-				}
+			if err != nil {
+				fmt.Printf("Redis Error: %s", err.Error())
+			}
 
-				detections := detectors.DetectAnomalyWithSMA(traffics, 5, thershold)
-				for detectTime, detection := range detections {
-					if detection {
-						fmt.Printf("Anormaly detected in %s \n", nowTime.Add(-time.Second*10).Add(time.Second*time.Duration(detectTime)).Format("15:04:05"))
+			go func() {
+				if len(traffics) >= 10 {
+					detections := detectors.DetectAnomalyWithSMA(traffics, int(math.Floor(windowSize/4)), thershold)
+					for detectTime, detection := range detections {
+						if detection.Detected {
+							dt := nowTime.Add(-time.Second * time.Duration(windowSize)).Add(time.Second * time.Duration(detectTime+1))
+							plotLock.Lock()
+							trafficplot.CaptureAnomaly(dt, detection.Traffic/unit)
+							plotLock.Unlock()
+							fmt.Printf("Anormaly detected in %s \n", dt.Format("15:04:05"))
+						}
 					}
 				}
-			}
+			}()
 			prevTime = nowTime
 		}
 	}
@@ -106,7 +129,12 @@ func packetLogger(stream streams.TrafficStream, packetSource gopacket.PacketSour
 			if err != nil {
 				fmt.Println(err.Error())
 			}
-			fmt.Printf("%.8f MB/Sec - %s\n", ((float64(sumInSecond)) / 1.049e+6), nowTime.Format("15:04:05"))
+
+			plotLock.Lock()
+			trafficplot.Capture(((float64(sumInSecond)) / unit))
+			plotLock.Unlock()
+
+			fmt.Printf("%.8f MB/Sec - %s\n", ((float64(sumInSecond)) / unit), nowTime.Format("15:04:05"))
 			sumInSecond = 0
 			prevTime = nowTime
 		}

@@ -1,9 +1,13 @@
 package detectors
 
 import (
-	"fmt"
 	"math"
 )
+
+type DetectPoint struct {
+	Detected bool
+	Traffic  float64
+}
 
 func SMA(data []float64, k int) []float64 {
 	sma := make([]float64, len(data)-k+1)
@@ -17,17 +21,16 @@ func SMA(data []float64, k int) []float64 {
 	return sma
 }
 
-func DetectAnomalyWithSMA(traffics []float64, period int, threshold float64) []bool {
+func DetectAnomalyWithSMA(traffics []float64, period int, threshold float64) []DetectPoint {
 	sma := SMA(traffics, period)
-	anomalies := make([]bool, len(traffics))
+	anomalies := make([]DetectPoint, len(traffics))
 	for i, v := range traffics {
 		if i < period {
 			continue
 		}
 		diff := math.Abs(v - sma[i-period])
 		if diff > threshold {
-			fmt.Printf("Average moved from %f to %f \n", v, sma[i-period])
-			anomalies[i] = true
+			anomalies[i] = DetectPoint{Traffic: v, Detected: true}
 		}
 	}
 	return anomalies
